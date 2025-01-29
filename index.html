@@ -1,140 +1,85 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Streamtape File Manager</title>
+    <title>Streamtape Browser Client</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; }
-        .section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        .tree-view { margin-left: 20px; }
-        .folder { color: #1a73e8; cursor: pointer; margin: 5px 0; }
-        .file { color: #137333; margin: 5px 0; }
-        .id { color: #666; font-size: 0.9em; margin-left: 10px; }
-        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }
+        .section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; }
+        pre { background: #f0f0f0; padding: 10px; overflow-x: auto; }
     </style>
 </head>
 <body>
-    <h1>Streamtape File Manager</h1>
+    <h1>Streamtape Browser Client</h1>
 
     <div class="section">
-        <h2>Authentication</h2>
+        <h2>API Credentials</h2>
         <input type="text" id="login" placeholder="API Login">
         <input type="password" id="key" placeholder="API Key">
-        <button onclick="listRoot()">Load Root Folder</button>
     </div>
 
     <div class="section">
-        <h2>Current Folder: <span id="currentFolderName"></span></h2>
-        <div id="folderPath"></div>
-        <div id="fileTree" class="tree-view"></div>
+        <h2>File Browser</h2>
+        <button onclick="listFiles()">List All Files</button>
+        <button onclick="listFolders()">List All Folders</button>
+        <div id="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>API Response</h2>
+        <pre id="result"></pre>
     </div>
 
     <script>
-        const API_BASE = 'https://api.streamtape.com';
-        let currentFolder = { id: '', name: 'Root', path: [] };
-
-        async function makeRequest(endpoint, params = {}) {
+        // Client-side API handler
+        async function streamtapeAPI(endpoint, params = {}) {
             const login = document.getElementById('login').value;
             const key = document.getElementById('key').value;
             
-            const url = new URL(`${API_BASE}/${endpoint}`);
+            const url = new URL(`https://api.streamtape.com/${endpoint}`);
             url.searchParams.append('login', login);
             url.searchParams.append('key', key);
             
-            Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
-            
+            Object.entries(params).forEach(([key, value]) => {
+                url.searchParams.append(key, value);
+            });
+
             try {
                 const response = await fetch(url);
-                return await response.json();
+                const data = await response.json();
+                displayResult(data);
+                return data;
             } catch (error) {
-                console.error('API Error:', error);
+                displayResult({ error: error.message });
             }
         }
 
-        async function listFolder(folderId = '', folderName = '') {
-            if (folderId) {
-                currentFolder.path.push({ id: currentFolder.id, name: currentFolder.name });
-                currentFolder.id = folderId;
-                currentFolder.name = folderName;
-            }
+        // Display formatted results
+        function displayResult(data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = JSON.stringify(data, null, 2);
+        }
 
-            const data = await makeRequest('file/listfolder', { folder: currentFolder.id });
-            
-            if (data && data.result) {
-                updateFolderDisplay(data.result);
+        // File listing with IDs
+        async function listFiles() {
+            const data = await streamtapeAPI('file/listfolder', { folder: '' });
+            if (data?.result?.files) {
+                const output = document.getElementById('output');
+                output.innerHTML = data.result.files.map(file => `
+                    <div>📄 ${file.name} <em>(ID: ${file.id})</em></div>
+                `).join('');
             }
         }
 
-        function listRoot() {
-            currentFolder = { id: '', name: 'Root', path: [] };
-            listFolder();
-        }
-
-        function updateFolderDisplay(folderData) {
-            const treeContainer = document.getElementById('fileTree');
-            const folderNameDisplay = document.getElementById('currentFolderName');
-            const pathDisplay = document.getElementById('folderPath');
-
-            // Update current folder name
-            folderNameDisplay.textContent = folderData.name || 'Root';
-
-            // Update folder path
-            pathDisplay.innerHTML = currentFolder.path.map((f, i) => `
-                <button onclick="navigateToPathIndex(${i})">${f.name}</button> › 
-            `).join('') + currentFolder.name;
-
-            // Build folder tree
-            let html = '<h3>Folders:</h3>';
-            
-            if (folderData.folders && folderData.folders.length > 0) {
-                folderData.folders.forEach(folder => {
-                    html += `
-                        <div class="folder" onclick="listFolder('${folder.id}', '${folder.name}')">
-                            📁 ${folder.name}
-                            <span class="id">ID: ${folder.id}</span>
-                        </div>
-                    `;
-                });
-            } else {
-                html += '<div>No subfolders</div>';
+        // Folder listing with IDs
+        async function listFolders() {
+            const data = await streamtapeAPI('file/listfolder', { folder: '' });
+            if (data?.result?.folders) {
+                const output = document.getElementById('output');
+                output.innerHTML = data.result.folders.map(folder => `
+                    <div>📁 ${folder.name} <em>(ID: ${folder.id})</em></div>
+                `).join('');
             }
-
-            html += '<h3>Files:</h3>';
-            
-            if (folderData.files && folderData.files.length > 0) {
-                folderData.files.forEach(file => {
-                    html += `
-                        <div class="file">
-                            📄 ${file.name} 
-                            <span class="id">ID: ${file.id}</span>
-                            <span class="size">(${formatBytes(file.size)})</span>
-                        </div>
-                    `;
-                });
-            } else {
-                html += '<div>No files</div>';
-            }
-
-            treeContainer.innerHTML = html;
-        }
-
-        function navigateToPathIndex(index) {
-            const targetFolder = currentFolder.path[index];
-            currentFolder = {
-                id: targetFolder.id,
-                name: targetFolder.name,
-                path: currentFolder.path.slice(0, index)
-            };
-            listFolder();
-        }
-
-        function formatBytes(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
     </script>
 </body>
-  </html>
+</html>
