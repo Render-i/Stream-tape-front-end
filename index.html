@@ -1,27 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Streamtape Browser Client</title>
+    <title>Streamtape File Manager</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
         .section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; }
+        .item { margin: 5px 0; padding: 5px; border-bottom: 1px solid #eee; }
+        .folder { color: #1a73e8; }
+        .file { color: #2e7d32; }
         pre { background: #f0f0f0; padding: 10px; overflow-x: auto; }
     </style>
 </head>
 <body>
-    <h1>Streamtape Browser Client</h1>
+    <h1>Streamtape File Manager</h1>
 
     <div class="section">
-        <h2>API Credentials</h2>
+        <h2>API Configuration</h2>
         <input type="text" id="login" placeholder="API Login">
         <input type="password" id="key" placeholder="API Key">
+        <button onclick="listRoot()">List Root Content</button>
     </div>
 
     <div class="section">
         <h2>File Browser</h2>
-        <button onclick="listFiles()">List All Files</button>
-        <button onclick="listFolders()">List All Folders</button>
-        <div id="output"></div>
+        <div id="content"></div>
     </div>
 
     <div class="section">
@@ -30,18 +32,18 @@
     </div>
 
     <script>
-        // Client-side API handler
-        async function streamtapeAPI(endpoint, params = {}) {
+        async function callStreamtapeAPI(endpoint, params = {}) {
             const login = document.getElementById('login').value;
             const key = document.getElementById('key').value;
             
             const url = new URL(`https://api.streamtape.com/${endpoint}`);
             url.searchParams.append('login', login);
             url.searchParams.append('key', key);
-            
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value);
-            });
+
+            // Only add folder parameter if specified
+            if(params.folder !== undefined) {
+                url.searchParams.append('folder', params.folder);
+            }
 
             try {
                 const response = await fetch(url);
@@ -53,32 +55,61 @@
             }
         }
 
-        // Display formatted results
+        async function listRoot() {
+            const data = await callStreamtapeAPI('file/listfolder');
+            if(data?.status === 200) {
+                displayContent(data.result);
+            }
+        }
+
+        function displayContent(content) {
+            const container = document.getElementById('content');
+            let html = '<h3>Folders:</h3>';
+            
+            if(content.folders?.length > 0) {
+                content.folders.forEach(folder => {
+                    html += `
+                        <div class="item folder">
+                            📁 ${folder.name}
+                            <span style="color: #666;">(ID: ${folder.id})</span>
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<div class="item">No folders found</div>';
+            }
+
+            html += '<h3>Files:</h3>';
+            
+            if(content.files?.length > 0) {
+                content.files.forEach(file => {
+                    html += `
+                        <div class="item file">
+                            📄 ${file.name}
+                            <span style="color: #666;">
+                                (ID: ${file.linkid}, Size: ${formatBytes(file.size)})
+                            </span>
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<div class="item">No files found</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
         function displayResult(data) {
             const resultDiv = document.getElementById('result');
             resultDiv.textContent = JSON.stringify(data, null, 2);
         }
 
-        // File listing with IDs
-        async function listFiles() {
-            const data = await streamtapeAPI('file/listfolder', { folder: '' });
-            if (data?.result?.files) {
-                const output = document.getElementById('output');
-                output.innerHTML = data.result.files.map(file => `
-                    <div>📄 ${file.name} <em>(ID: ${file.id})</em></div>
-                `).join('');
-            }
-        }
-
-        // Folder listing with IDs
-        async function listFolders() {
-            const data = await streamtapeAPI('file/listfolder', { folder: '' });
-            if (data?.result?.folders) {
-                const output = document.getElementById('output');
-                output.innerHTML = data.result.folders.map(folder => `
-                    <div>📁 ${folder.name} <em>(ID: ${folder.id})</em></div>
-                `).join('');
-            }
+        function formatBytes(bytes) {
+            if(bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
     </script>
 </body>
